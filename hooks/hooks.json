@@ -1,0 +1,89 @@
+{
+  "description": "Memory plugin lifecycle hooks — vault sync, session tracking, and compaction",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/session-start-vault.sh",
+            "timeout": 10000,
+            "description": "Initialize vault sync on session start"
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/force-mcp-connectors.sh",
+            "timeout": 5000,
+            "description": "Ensure MCP connectors are active"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-vault.sh",
+            "timeout": 15000,
+            "description": "Save vault state before compaction"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-vault.sh",
+            "timeout": 15000,
+            "description": "Persist vault on session stop"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/agent-start.sh",
+            "timeout": 5000,
+            "description": "Initialize subagent memory context"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/agent-stop.sh",
+            "timeout": 5000,
+            "description": "Persist subagent memory on stop"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/compact-notification.sh",
+            "timeout": 5000,
+            "description": "Handle compact notification event"
+          }
+        ]
+      }
+    ]
+  }
+}
