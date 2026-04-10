@@ -1,5 +1,7 @@
 # Exclude dev/internal artifacts from ClawHub bundle
+.git/
 .github/
+.DS_Store
 *.png
 *.jpg
 *.jpeg

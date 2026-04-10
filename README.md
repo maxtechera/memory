@@ -2,7 +2,9 @@
 
 Your AI agents forget everything between sessions. Memory fixes that.
 
-3-tier architecture (HOT/WARM/COLD), Obsidian vault sync, session hooks, and weekly consolidation. Every session contributes to a permanent knowledge graph. Nothing is forgotten. Everything decays gracefully.
+Session hooks capture what your agent learns — decisions, preferences, context — and persist it across compactions and session boundaries. Your next session picks up where the last one left off.
+
+**Requires**: [Obsidian](https://obsidian.md) with the Obsidian CLI (v1.12.7+) for long-term vault storage. Without Obsidian, hooks still save session state locally to `~/.claude/compaction-state/`.
 
 ## Install
 
@@ -41,46 +43,49 @@ git clone https://github.com/maxtechera/memory.git ~/.agents/skills/memory
 
 ## Setup
 
-### Level 0: Zero Config (hooks only)
+### Level 0: Run Setup
 
-Install the skill. Session hooks fire automatically — vault awareness injected on session start, session state flushed to Obsidian on compaction and session end.
+After installing, run the setup wizard:
 
 ```
 /memory setup
 ```
 
-The setup wizard detects your Obsidian vault, installs hooks, and validates the CLI.
+This detects your Obsidian vault, symlinks the session hooks to `~/.claude/hooks/`, and validates the CLI. Once setup completes, hooks fire automatically on every session — no manual invocation needed.
 
 ### Level 1: Connect Obsidian Vault
 
-If auto-detection fails, set the vault path manually:
+If auto-detection fails (e.g., Obsidian app isn't running), set the vault path manually in your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-# In your .env or shell profile
-export OBSIDIAN_VAULT_PATH=/path/to/your/vault
+export OBSIDIAN_VAULT_PATH="$HOME/Documents/my-vault"
 ```
 
-**Requirements**: Obsidian CLI v1.12.7+ installed, Obsidian app running for CLI commands.
+**Requires**: [Obsidian CLI](https://obsidian.md) v1.12.7+ installed and Obsidian app running for search/create operations. Without it, hooks fall back to direct filesystem writes.
 
-### Level 2: Enable OpenClaw Sync (Mode 2)
+### Level 2: Enable OpenClaw Sync (Optional)
 
-If you run OpenClaw on Railway, connect it for cross-platform journal sync:
+**Skip this if you don't use OpenClaw.** This level is only for users running OpenClaw on Railway who want cross-platform journal sync.
 
 ```bash
-export OPENCLAW_CONFIG_PATH=/path/to/openclaw-config
+export OPENCLAW_CONFIG_PATH="/path/to/openclaw-config"
 ```
 
 This enables `/memory sync openclaw` to pull OpenClaw journals into your vault.
 
 ### Level 3: Full REM Sleep
 
-Weekly consolidation runs as a cron job (default: Sunday 3am). Configure:
+Weekly consolidation prunes old entries and audits TTL decay. Trigger manually anytime:
+
+```
+/memory rem-sleep
+```
+
+Or set a cron schedule (Sunday 3am = `0 3 * * 0`) in your shell profile:
 
 ```bash
 export REM_SLEEP_SCHEDULE="0 3 * * 0"
 ```
-
-Or trigger manually: `/memory rem-sleep`
 
 ---
 
@@ -160,17 +165,40 @@ Hooks fire automatically on Claude Code lifecycle events. No manual invocation n
 If not using `/memory setup`:
 
 ```bash
-# Symlink hooks to Claude Code hooks directory
-ln -sf ~/dev/memory/hooks/session-start-vault.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/pre-compact-vault.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/session-stop-vault.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/agent-start.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/agent-stop.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/compact-notification.sh ~/.claude/hooks/
-ln -sf ~/dev/memory/hooks/force-mcp-connectors.sh ~/.claude/hooks/
+# Replace /path/to/memory with your actual install path
+MEMORY_DIR="/path/to/memory"  # e.g., ~/.claude/skills/memory
+for hook in session-start-vault.sh pre-compact-vault.sh session-stop-vault.sh \
+            agent-start.sh agent-stop.sh compact-notification.sh force-mcp-connectors.sh; do
+  ln -sf "$MEMORY_DIR/hooks/$hook" ~/.claude/hooks/
+done
 ```
 
-Then update `~/.claude/settings.json` to register the hooks. See [hooks/README.md](hooks/README.md) for the full configuration.
+Then update `~/.claude/settings.json` to register the hooks. See [hooks/README.md](hooks/README.md) for the full JSON configuration.
+
+---
+
+## Your First Sync
+
+After setup, work normally in a Claude Code session. When you're ready to save what you learned:
+
+```
+/memory sync
+```
+
+Example output:
+
+```
+Memory sync complete
+Mode: 1 session
+Topic files updated: 2 entries across 1 file
+Obsidian: 0 patterns, 1 decision, 0 learnings, 1 journal
+SESSION-STATE: flushed to memory/2026-04-10.md
+TTL: 0 entries reviewed, 0 archived
+Skipped (duplicates): 0
+Health: OK
+```
+
+**What happened**: The agent classified your session insights, wrote facts to topic files (with TTL decay), synced decisions to your Obsidian vault, and created a daily journal entry. Your next session will have access to everything you saved.
 
 ---
 
