@@ -184,12 +184,14 @@ Trigger: "sync openclaw" / "pull openclaw memory"
 
 Trigger: "sync claude code memory" / "sync projects"
 
-1. Scan `~/.claude/projects/*/memory/*.md`
+1. Scan `~/.claude/projects/*/memory/*.md` and `~/.claude/plans/*.md`
 2. Classify and route:
    - pattern → `knowledge/patterns/cc-{name}.md`
    - learning → `knowledge/learnings/cc-{name}.md`
    - decision → `knowledge/decisions/cc-{name}.md`
    - project → update `projects/{name}.md`
+   - plan → `knowledge/patterns/cc-plan-{name}.md`
+3. Prefix all vault notes with `cc-` to indicate Claude Code origin
 
 ### Mode 4: REM Sleep (Weekly Consolidation)
 
