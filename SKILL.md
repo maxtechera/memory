@@ -22,6 +22,8 @@ triggers:
   - dream
   - memory audit
   - memory wiki
+  - memory wiki sync
+  - wiki sync
   - memory wiki init
   - memory wiki ingest
   - memory wiki query
@@ -71,6 +73,8 @@ Cross-platform memory system for AI agents. 3-tier architecture (HOT/WARM/COLD),
 | `/memory status` | Memory health: tier sizes, TTL alerts, last sync times |
 | `/memory setup` | Configure vault path, detect platforms, install hooks |
 | `/memory audit` | TTL audit + boundary check + health alerts |
+| `/memory wiki sync` | **Full pipeline**: init → ingest all vault sources → Notion publish (Mode 5) |
+| `/memory wiki sync --full` | Full pipeline, reprocessing all sources from scratch (Mode 5) |
 | `/memory wiki init` | Initialize wiki/ folder structure in vault (Mode 5) |
 | `/memory wiki ingest [source]` | Process raw source → compile wiki pages (Mode 5) |
 | `/memory wiki ingest --from-memory` | Pull session digests + topics → wiki pages (Mode 5) |
@@ -506,6 +510,144 @@ notion-synced: ""
 | source-summary | `sources/` |
 | comparison | `comparisons/` |
 | contradiction | `concepts/` (unresolved conflicts) |
+
+---
+
+#### `/memory wiki sync [--full]`
+
+The primary wiki command. Orchestrates the complete pipeline: init → ingest all vault sources in order → Notion publish. Safe to run repeatedly — incremental by default.
+
+**`--full`** flag: reprocesses all sources from scratch, ignoring `<!-- processed:` markers.
+
+**Strategy**: The vault has ~479 notes. This command ingests by **cluster** (MOC-first), not note-by-note. Each cluster becomes 1–3 synthesis pages, not N individual pages. This keeps the wiki as a synthesis layer, not a mirror.
+
+---
+
+**Phase 1 — Init** (always runs)
+1. Run `obsidian vault info=path` — confirm vault is reachable
+2. Verify `wiki/` folder tree: `{concepts,entities,sources,comparisons,raw/{web-clips,documents,sessions,external}}/`
+3. If any folder or file missing: create it (same as `/memory wiki init`)
+4. Read `wiki/schema.md` — load operating rules before any write
+
+---
+
+**Phase 2 — Knowledge Graph (Obsidian COLD tier)**
+
+Ingest the vault's `knowledge/` folder by **cluster via MOC**. Read the MOC for each cluster + the 3–5 highest-`agent-use: high` notes per cluster. Do not read every note individually.
+
+```
+Source                                 → Wiki target
+knowledge/patterns/ai-agents/          → concepts/ai-agent-patterns.md   (update or create)
+knowledge/patterns/business/           → concepts/business-patterns.md
+knowledge/patterns/content/            → concepts/content-patterns.md
+knowledge/patterns/marketing/          → concepts/marketing-patterns.md
+knowledge/patterns/technical/          → concepts/technical-patterns.md
+knowledge/learnings/                   → sources/vault-learnings.md       (rolling summary)
+knowledge/decisions/                   → sources/vault-decisions.md       (rolling summary)
+```
+
+Steps per cluster:
+1. Read `knowledge/patterns/{cluster}/_*MOC.md` — get cluster landscape
+2. Read notes with `agent-use: high` (use `obsidian search` to filter)
+3. Create or patch the target concept page: synthesize across all notes, cite top 5 by name in `sources:`
+4. Update `[[related]]` cross-links to other concept pages in the same ingest pass
+
+Mark each MOC as `<!-- processed: YYYY-MM-DD -->` on incremental runs to skip on re-run.
+On `--full`: ignore `processed` markers, reprocess all clusters.
+
+---
+
+**Phase 3 — Projects**
+
+Ingest `projects/` folder. One entity page per active project.
+
+Steps:
+1. Read `projects/_Projects MOC.md` — get full project list with statuses
+2. For each project with `status: active` or `status: building`:
+   - Read `projects/{name}.md`
+   - Create or patch `wiki/entities/{name}.md` with full frontmatter
+   - Extract: stack, status, key architecture decisions, relationships to other projects
+   - Cross-link to any concept pages that apply (e.g., openclaw.md links to ai-agent-patterns.md)
+3. Skip `status: paused`, `archived`, `reference` unless `--full`
+
+---
+
+**Phase 4 — Dev / Identity / Operations**
+
+Ingest supporting vault folders via their MOCs.
+
+```
+Source                    Strategy                           → Wiki target
+dev/_Dev MOC.md           Read MOC + top stacks/tools        → sources/dev-stack-reference.md
+identity/                 Read all identity notes            → entities/neo-identity.md
+operations/               Read operational playbooks MOC     → sources/operations-playbooks.md
+```
+
+---
+
+**Phase 5 — Memory Tier (`--from-memory`)**
+
+Ingest the HOT/WARM tier — the most recent session knowledge not yet in COLD.
+
+1. Read `memory/topics/*.md` — all topic files
+2. Read `logs/sessions/*.md` — last 7 days of session digests
+3. Route each insight to the most relevant existing wiki page (patch) or create new if no match
+4. Do not create pages for ephemeral session facts — only route insights that would survive TTL
+
+---
+
+**Phase 6 — Raw Sources (`wiki/raw/`)**
+
+Process any unprocessed files dropped into the raw/ subdirs.
+
+1. Scan `wiki/raw/{web-clips,documents,sessions,external}/` for files without `<!-- processed:` header
+2. For each unprocessed file: run standard ingest (Phase 2 steps per source)
+3. Mark each as `<!-- processed: YYYY-MM-DD -->`
+
+---
+
+**Phase 7 — Finalize**
+
+1. **Rebuild `wiki/overview.md`**: update project landscape, concept cluster map, wiki vs knowledge/ table
+2. **Rebuild `wiki/index.md`**: scan all wiki pages, count inbound links per page, keep top ≤30 by inbound-link count
+3. **Append to `wiki/log.md`**: `## [YYYY-MM-DD] sync | full-pipeline | [n] pages created | [n] patched | [n] Notion queued`
+4. **Notion publish**: run `/memory wiki sync notion` — push all `confidence: high` + `notion-id: ""` pages
+
+---
+
+**Phase 7 — Sync Report**
+
+```
+Wiki sync complete
+──────────────────────────────────────────
+Phase 2 (knowledge graph):
+  Clusters processed: 7
+  Pages created: [n] | patched: [n]
+
+Phase 3 (projects):
+  Active projects: [n]
+  Entity pages created: [n] | patched: [n]
+
+Phase 4 (dev/identity/operations):
+  Sources processed: 3
+  Pages created: [n] | patched: [n]
+
+Phase 5 (memory tier):
+  Topic files: [n] | Session digests: [n]
+  Wiki pages updated: [n]
+
+Phase 6 (raw sources):
+  Unprocessed files found: [n]
+  Pages created: [n]
+
+Finalize:
+  Index: [n]/30 entries
+  Notion queue: [n] pages (confidence:high)
+  Notion published: [n]
+
+Health: [OK | ALERTS: ...]
+──────────────────────────────────────────
+```
 
 ---
 
