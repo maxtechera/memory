@@ -279,11 +279,176 @@ Trigger: Weekly cron OR "memory dream" OR "dream"
 
 ---
 
+---
+
+## LLM Wiki — Karpathy Reference
+
+> Read this section before implementing any `/memory wiki` command. It is the canonical source of truth for why the wiki works the way it does. The operational details are in `wiki/schema.md`; this section explains the principles behind them.
+
+**Source**: Andrej Karpathy, *llm-wiki* gist (April 4, 2026). 5K+ stars, 3.7K forks within days of publication.
+**URL**: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
+
+---
+
+### The Core Insight
+
+Traditional RAG re-derives answers from raw documents on every query — knowledge never accumulates. The LLM Wiki pattern inverts this:
+
+> "Rather than retrieving from raw documents each time, have the LLM incrementally build and maintain a persistent wiki — structured markdown files that synthesize and cross-reference sources."
+
+The wiki is **compiled knowledge**. Like compiled code vs always recompiling from source — the compilation happens once, the cost amortizes across every subsequent query. Cross-references are already built in. Contradictions are already flagged. Synthesis is already done.
+
+**Why human-maintained wikis fail**: The maintenance burden (updating cross-references, noting contradictions, keeping summaries current) grows faster than perceived value. Humans abandon wikis. LLMs don't get bored — they handle 15-file updates in one pass. The human's job becomes curation, direction, and asking the right questions.
+
+---
+
+### Three Layers
+
+Karpathy defines exactly three layers. This is not flexible — the structure is load-bearing:
+
+```
+Layer 1 — Raw Sources
+  Immutable documents the LLM reads but never modifies.
+  PDFs, articles, transcripts, web clips, session notes.
+  Ground truth. If something here is wrong, fix it here.
+
+Layer 2 — The Wiki
+  LLM-generated and LLM-maintained markdown files.
+  Summaries, entity pages, concept pages, syntheses, contradiction flags.
+  The LLM owns this entirely.
+
+Layer 3 — The Schema
+  A configuration document (CLAUDE.md or equivalent) that tells the LLM
+  how to structure and maintain the wiki.
+  Updated only intentionally, not automatically.
+```
+
+**Why three layers and not two**: The schema layer is what prevents the wiki from drifting. Without explicit operating rules, LLMs make inconsistent structural decisions across sessions. The schema is the contract that makes the wiki coherent over time.
+
+---
+
+### Three Operations
+
+Karpathy specifies exactly three operations. Every `/memory wiki` command maps to one of these:
+
+#### Operation 1: Ingest
+
+> "The LLM reads the source, discusses key takeaways, writes a summary page in the wiki, updates the index, updates relevant entity and concept pages across the wiki, and appends an entry to the log."
+
+**Key behaviors**:
+- A single source typically touches **5–15 existing pages** — ingest is not a one-page operation
+- The index (`wiki/index.md`) is updated on **every** ingest — it is the operational registry
+- The log (`wiki/log.md`) is updated on **every** ingest — it is the audit trail
+- Raw sources are marked `<!-- processed: YYYY-MM-DD -->` — idempotency guarantee
+- Cross-links are bidirectional — A references B means B must reference A
+
+#### Operation 2: Query
+
+> "You ask questions against the wiki. The LLM searches for relevant pages, reads them, and synthesizes an answer with citations. Answers can take different forms — markdown page, comparison table, slide deck, chart."
+
+**Key behaviors**:
+- The LLM reads `wiki/index.md` first to identify relevant pages — not the raw sources
+- Citations use `[[wikilink]]` format — verifiable, navigable
+- If the answer reveals a knowledge gap: create a stub page and log it as `gap-identified`
+- Valuable answers can be filed as new wiki pages — query output compounds the wiki
+
+#### Operation 3: Lint
+
+> "Periodically, ask the LLM to health-check the wiki. Look for: contradictions between pages, stale claims that newer sources have superseded, orphan pages with no inbound links, important concepts mentioned but lacking their own page, missing cross-references, data gaps."
+
+**Key behaviors**:
+- Lint is periodic hygiene, not continuous — run it manually or with dream
+- **Report only** — lint never auto-deletes or auto-fixes; it presents findings to the user
+- Contradictions are surfaced, not resolved — resolution requires human judgment on which source to trust
+
+---
+
+### Special Files
+
+Two files are essential to every wiki. Without them, the wiki degrades:
+
+#### `wiki/index.md` — The Catalog
+
+> "Catalog organized by category with links, one-line summaries, and metadata."
+
+- **Hard limit: ≤30 entries.** This is not a soft guideline — it is a forced curation constraint. When full, the LLM must decide what to prune (least-linked) to add something new. This pressure is what prevents wiki rot.
+- Updated on every ingest, every dream, every new page creation.
+- If a page is not in `index.md`, it functionally does not exist — the LLM won't find it in a query.
+- Format: `- [[page-name]] — one-line summary (type)`
+
+#### `wiki/log.md` — The Audit Trail
+
+> "Append-only chronological record with consistent prefixes: `## [YYYY-MM-DD] operation | Description`"
+
+- Grep-parseable by design: `grep "ingest" wiki/log.md` returns every source ever processed
+- Never edited, only appended
+- Operations: `init` · `ingest` · `update` · `query` · `lint` · `sync-notion` · `dream` · `gap-identified`
+- Example: `## [2026-04-13] ingest | tiered-agent-memory-architecture.md | 7 pages touched`
+
+---
+
+### Why This Works (and When It Doesn't)
+
+**Why it works**:
+- Maintenance burden shifts entirely to the LLM — humans only need to drop sources and ask questions
+- Knowledge compounds: each ingest enriches existing pages rather than adding isolated documents
+- Cross-references are structural: the wiki has topology (graph), not just content (pile of files)
+- Echoes Vannevar Bush's 1945 Memex — associative trails through personal knowledge — but solves the maintenance problem Bush couldn't
+
+**Known failure modes** (community consensus from 120+ gist comments):
+
+| Failure mode | Root cause | Fix |
+|---|---|---|
+| Wiki becomes unreliable | Error accumulation — LLM paraphrases instead of citing | Require `sources:` in every page; lint for missing provenance |
+| Pages drift apart | Asymmetric links, no re-synthesis | Bidirectional link rule; periodic dream |
+| Index becomes stale | Pages created without updating index | Enforce: index update is part of ingest, not optional |
+| Near-duplicates proliferate | No dedup check before creation | Read index.md before creating; merge on dream |
+| Confidence inflation | LLM marks everything `high` | Require ≥2 source-refs for `confidence: high` |
+
+---
+
+### Community Extensions (v2 Pattern — rohitg00)
+
+Extends the original with production lessons from building agentmemory:
+
+- **Confidence scoring** — facts weighted by recency and confirmation count
+- **Supersession tracking** — contradicted claims marked, not deleted
+- **Ebbinghaus forgetting** — stale knowledge deprioritized on queries
+- **Schema validation** — `resolver.py` catches malformed frontmatter before it hits the filesystem
+- **Event-driven hooks** — auto-ingest on new source drop; auto-lint on schedule
+- **Hybrid search at scale** — BM25 + vector + graph traversal fused via RRF (needed beyond ~200 pages)
+
+These are opt-in extensions. The base three-layer pattern is sufficient for most use cases.
+
+---
+
+### Relationship to This Memory System
+
+The wiki is Mode 5 — the output tier of the full memory pipeline:
+
+```
+HOT   SESSION-STATE.md (WAL, current session)
+  ↓ /memory sync (Modes 1–4)
+WARM  memory/topics/*.md + journals
+  ↓
+COLD  Obsidian vault: knowledge/ + logs/ + projects/
+  ↓ /memory wiki ingest --from-memory (Mode 5)
+WIKI  wiki/concepts/ + entities/ + sources/   ← LLM compiles from COLD
+  ↓ /memory wiki sync notion
+OUT   Notion: Pattern Library + Learnings & Insights
+```
+
+**The key integration**: `ingest --from-memory` treats recent session digests (`logs/sessions/`) and topic files (`memory/topics/*.md`) as raw sources for the wiki. Every `/memory sync` session potentially feeds the wiki. Knowledge accumulates without extra effort.
+
+**Parallel systems**: `wiki/` runs alongside `knowledge/` — they are not the same system and must never be merged. `knowledge/` is atomic, human-authored, TAXONOMY-governed. `wiki/` is synthetic, LLM-authored, schema.md-governed. They have different granularity, different ownership, different output targets.
+
+---
+
 ### Mode 5: Wiki (LLM Wiki — Karpathy Pattern)
 
 **What it is**: A compounding knowledge base in `wiki/` — parallel to TAXONOMY-governed `knowledge/`, not replacing it. Unlike RAG which re-derives answers from raw docs on every query, the wiki compiles knowledge once and keeps it current. The LLM owns all pages in `wiki/`; humans curate sources and ask questions.
 
-**Based on**: Andrej Karpathy's llm-wiki gist (April 2026, 5K+ stars). Full schema in `wiki/schema.md`.
+**Full schema and operational rules**: `wiki/schema.md` — read before any wiki operation.
 
 **Parallel systems rule**:
 | | `knowledge/` | `wiki/` |
