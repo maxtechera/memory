@@ -24,13 +24,18 @@ triggers:
 metadata:
   openclaw:
     emoji: "🧠"
-    optionalEnv:
-      - OBSIDIAN_VAULT_PATH
-      - OBSIDIAN_CLI_PATH
-      - OPENCLAW_CONFIG_PATH
-      - MEMORY_ROUTER_MAX_LINES
-      - MEMORY_TOPIC_MAX_ENTRIES
-      - DREAM_SCHEDULE
+    requires:
+      env: []
+      optionalEnv:
+        - OBSIDIAN_VAULT_PATH
+        - OBSIDIAN_CLI_PATH
+        - OPENCLAW_CONFIG_PATH
+        - MEMORY_ROUTER_MAX_LINES
+        - MEMORY_TOPIC_MAX_ENTRIES
+        - DREAM_SCHEDULE
+      bins: []
+    primaryEnv: ""
+    files: []
     tags:
       - memory
       - obsidian

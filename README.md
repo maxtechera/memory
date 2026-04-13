@@ -1,10 +1,38 @@
-# Memory
+# /memory
+
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](CHANGELOG.md)
+
+**Your AI agents forget everything between sessions. Memory fixes that.**
+
+```
+/plugin marketplace add maxtechera/memory
+```
+```bash
+clawhub install memory
+```
+
+Zero config. Run `/memory setup` once — session hooks fire automatically after that.
+
+---
 
 Your AI agents forget everything between sessions. Memory fixes that.
 
 Session hooks capture what your agent learns — decisions, preferences, context — and persist it across compactions and session boundaries. Your next session picks up where the last one left off.
 
 **Requires**: [Obsidian](https://obsidian.md) with the Obsidian CLI (v1.12.7+) for long-term vault storage. Without Obsidian, hooks still save session state locally to `~/.claude/compaction-state/`.
+
+## What people use it for
+
+**Picking up where you left off.** Start a session, your agent already knows what you were working on, what decisions were made last week, and what the user prefers. No re-briefing, no context dump.
+
+**Running long projects.** The WAL protocol captures decisions as they happen. Compaction events flush them to the vault. A month later you can ask "what did we decide about the auth system?" and get the answer.
+
+**Cross-platform context.** Work in Claude Code on your Mac, switch to OpenClaw in a container, pick up in Gemini CLI. Memory syncs the HOT/WARM/COLD tiers across all of them via Obsidian vault or OpenClaw journals.
+
+**Reducing token spend.** Instead of re-loading full project context every session, Memory surfaces only what's relevant. HOT memory (active session) stays tiny. WARM and COLD tiers are queried on demand.
+
+---
 
 ## Install
 
