@@ -106,6 +106,8 @@ OpenClaw writes independently to `openclaw-config/memory/` → synced to Obsidia
 
 **Boundary test**: `grep -c "NEVER\|ALWAYS\|must\|rule" MEMORY.md` must return 0.
 
+**Corruption risk**: Mixing behavioral rules into MEMORY.md teaches agents facts that should be instructions. Mixing facts into AGENTS.md teaches agents rules that should decay. Both corruptions compound silently — the system appears healthy until an agent follows a stale rule or ignores a live fact.
+
 ---
 
 ## WAL Protocol (Session-State)
@@ -184,6 +186,7 @@ Trigger: "save to memory" / "remember this" / "sync memory" / session compaction
 3. **Dedup before writing**:
    - Read the target file
    - For each new entry, check if an existing entry covers the same topic (same subject + same conclusion)
+   - Semantic match >80% → update in-place (patch). <80% → append as new entry.
    - If the existing entry says the same thing: skip (duplicate)
    - If the existing entry covers the same topic but with outdated info: update it in-place
    - If no match: append as new entry
@@ -232,6 +235,8 @@ Trigger: "sync claude code memory" / "sync projects"
 4. **Dedup**: Search Obsidian for existing `cc-{name}` notes before creating. Patch if exists.
 
 ### Mode 4: Dream (Analyze & Evolve)
+
+**Mode 4 runs on schedule (Sunday 3am UTC via `DREAM_SCHEDULE` cron) or manually. It is not optional hygiene — it is the system preventing its own decay. If it hasn't run in 7+ days, memory health degrades silently: journals pile up unclassified, topics bloat past their limits, expired TTLs accumulate.**
 
 Trigger: Weekly cron OR "memory dream" OR "dream"
 
