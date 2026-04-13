@@ -1,8 +1,8 @@
 ---
 name: memory
 version: "1.0.0"
-description: "Cross-platform memory system. 3-tier architecture, vault sync, session hooks, weekly consolidation."
-argument-hint: 'memory sync, memory status, memory dream, memory setup, memory audit'
+description: "Cross-platform memory system. 3-tier HOT/WARM/COLD + LLM Wiki (Mode 5). Vault sync, session hooks, weekly consolidation, Notion publishing."
+argument-hint: 'memory sync, memory status, memory dream, memory setup, memory audit, memory wiki ingest, memory wiki sync notion'
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
 homepage: https://github.com/maxtechera/memory
 repository: https://github.com/maxtechera/memory
@@ -21,6 +21,14 @@ triggers:
   - memory dream
   - dream
   - memory audit
+  - memory wiki
+  - memory wiki init
+  - memory wiki ingest
+  - memory wiki query
+  - memory wiki lint
+  - memory wiki sync notion
+  - memory wiki dream
+  - memory wiki status
 metadata:
   openclaw:
     emoji: "🧠"
@@ -48,7 +56,7 @@ metadata:
 
 # Memory
 
-Cross-platform memory system for AI agents. 3-tier architecture (HOT/WARM/COLD), Obsidian vault sync, session hooks, and weekly consolidation. Your agents forget everything between sessions — this fixes that.
+Cross-platform memory system for AI agents. 3-tier architecture (HOT/WARM/COLD), Obsidian vault sync, session hooks, weekly consolidation, and LLM Wiki (Mode 5) — a compounding knowledge base that publishes to Notion. Your agents forget everything between sessions — this fixes that.
 
 ---
 
@@ -63,6 +71,14 @@ Cross-platform memory system for AI agents. 3-tier architecture (HOT/WARM/COLD),
 | `/memory status` | Memory health: tier sizes, TTL alerts, last sync times |
 | `/memory setup` | Configure vault path, detect platforms, install hooks |
 | `/memory audit` | TTL audit + boundary check + health alerts |
+| `/memory wiki init` | Initialize wiki/ folder structure in vault (Mode 5) |
+| `/memory wiki ingest [source]` | Process raw source → compile wiki pages (Mode 5) |
+| `/memory wiki ingest --from-memory` | Pull session digests + topics → wiki pages (Mode 5) |
+| `/memory wiki query [topic]` | Answer from compiled wiki, not raw sources (Mode 5) |
+| `/memory wiki sync notion` | Push publish-ready pages to Notion (Mode 5) |
+| `/memory wiki lint` | Health check: orphans, stale, broken links, missing provenance (Mode 5) |
+| `/memory wiki dream` | Bulk consolidation: merge, contradiction detection, rebuild index (Mode 5) |
+| `/memory wiki status` | Wiki stats: pages, stale count, publish queue, last sync (Mode 5) |
 
 ---
 
@@ -79,10 +95,19 @@ WARM  on-demand read when domain is relevant
 
 COLD  search-only, permanent
   Obsidian vault     knowledge/, logs/, projects/, identity/, dev/
+  ↕  parallel, not replacing COLD ↕
+
+WIKI  LLM-owned, compounding synthesis (Mode 5)
+  wiki/concepts/     compiled concept + synthesis pages
+  wiki/entities/     people, products, tools
+  wiki/sources/      per-source summaries
+  wiki/comparisons/  structured option comparisons
+  wiki/raw/          immutable inputs (web-clips, docs, sessions, external)
 ```
 
-**Sync direction**: Session → HOT → WARM → COLD (Obsidian).
+**Sync direction**: Session → HOT → WARM → COLD (Obsidian) → WIKI → Notion.
 OpenClaw writes independently to `openclaw-config/memory/` → synced to Obsidian via Mode 2.
+Wiki feeds from COLD tier via `ingest --from-memory` and publishes outward to Notion.
 
 ### Tier Rules
 
@@ -91,6 +116,7 @@ OpenClaw writes independently to `openclaw-config/memory/` → synced to Obsidia
 | HOT | ≤2400 tokens | Always loaded | Write-before-respond (WAL) |
 | WARM | On-demand | Read when domain matches | Append with TTL suffix |
 | COLD | Search-only | `obsidian search` → read | Create/patch via Obsidian CLI |
+| WIKI | On-demand | `wiki/index.md` → targeted reads | LLM compiles + patches pages |
 
 ---
 
@@ -253,6 +279,169 @@ Trigger: Weekly cron OR "memory dream" OR "dream"
 
 ---
 
+### Mode 5: Wiki (LLM Wiki — Karpathy Pattern)
+
+**What it is**: A compounding knowledge base in `wiki/` — parallel to TAXONOMY-governed `knowledge/`, not replacing it. Unlike RAG which re-derives answers from raw docs on every query, the wiki compiles knowledge once and keeps it current. The LLM owns all pages in `wiki/`; humans curate sources and ask questions.
+
+**Based on**: Andrej Karpathy's llm-wiki gist (April 2026, 5K+ stars). Full schema in `wiki/schema.md`.
+
+**Parallel systems rule**:
+| | `knowledge/` | `wiki/` |
+|---|---|---|
+| Owner | Human | LLM |
+| Granularity | Atomic (one concept per note) | Synthesized (cross-source) |
+| Schema | TAXONOMY.md | wiki/schema.md |
+| Structure | Type + domain folders | Type folders: concepts/entities/sources/comparisons/ |
+| Trigger | Human writes | `/memory wiki ingest` |
+| Output | Stays in vault | → Notion (Pattern Library + Learnings) |
+
+**Continuous loop**:
+```
+Sessions (HOT)
+  ↓ /memory sync (Modes 1–4)
+WARM + COLD (topics/, knowledge/, logs/)
+  ↓ /memory wiki ingest --from-memory
+wiki/concepts/ + entities/ + sources/
+  ↓ /memory wiki sync notion
+Notion: Pattern Library + Learnings & Insights
+```
+
+---
+
+#### Wiki Frontmatter Schema
+
+Every page in `wiki/` must have:
+```yaml
+---
+title: Page Title
+type: concept|entity|source-summary|comparison|synthesis|contradiction
+sources: []         # vault paths or wiki/raw/ files that informed this page
+related: []         # [[wikilinks]] to other wiki pages (bidirectional)
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+confidence: high|medium|low
+domain: dev|operations|content|marketing|business|ai-agents|identity|product
+tags: []
+notion-id: ""       # auto-populated by sync notion
+notion-url: ""
+notion-synced: ""
+---
+```
+
+**Confidence semantics**:
+- `high` — multiple sources confirm, ready for Notion sync
+- `medium` — one source, needs corroboration before publishing
+- `low` — stub or contradicted, needs investigation
+
+**Type → folder**:
+| type | folder |
+|------|--------|
+| concept, synthesis | `concepts/` |
+| entity | `entities/` |
+| source-summary | `sources/` |
+| comparison | `comparisons/` |
+| contradiction | `concepts/` (unresolved conflicts) |
+
+---
+
+#### `/memory wiki init`
+1. Confirm vault path via `obsidian vault info=path`
+2. Verify structure: `wiki/{concepts,entities,sources,comparisons,raw/{web-clips,documents,sessions,external}}/`
+3. Confirm `wiki/schema.md`, `wiki/index.md`, `wiki/log.md`, `wiki/overview.md` exist
+4. Report pages by type, last log entry
+
+#### `/memory wiki ingest [source|--from-memory]`
+
+**`--from-memory`**: reads `logs/sessions/*.md` (last 7 days) + `memory/topics/*.md` as source material.
+**`[file]`**: reads specified file from `wiki/raw/` or vault path.
+**`[vault-cluster]`**: reads a folder of vault notes as a batch source (e.g., `knowledge/patterns/ai-agents/`).
+
+Steps:
+1. Read source(s). Skip any with `<!-- processed: YYYY-MM-DD -->`.
+2. Read `wiki/index.md` — find existing pages this source touches.
+3. For each affected page (5–15 typical):
+   - Exists → patch: update body, `updated`, add to `sources:`, note contradictions
+   - New → create: full frontmatter, place in correct type folder
+4. Bidirectional cross-link: every `related:` entry must link back.
+5. Update `wiki/index.md` (≤30 entries — prune least-linked to make room).
+6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source] | [n] pages touched`.
+7. Mark source processed: prepend `<!-- processed: YYYY-MM-DD -->`.
+
+**Ingest rule**: if a page isn't in `wiki/index.md`, it doesn't operationally exist. Always update index.
+
+#### `/memory wiki query [question]`
+1. Read `wiki/index.md` → identify 3–5 relevant pages by name
+2. Read those pages
+3. Synthesize answer with `[[page]]` citations
+4. Gap found → create stub page (`confidence: low`), log `gap-identified`
+5. Valuable answer → offer to file as new `synthesis` page
+
+#### `/memory wiki sync notion`
+1. Find pages: `notion-id: ""` + `confidence: high`
+2. Route by type:
+   - `concept|entity|synthesis` → **Pattern Library** (`bb55a805-3f8d-4958-8c89-0f353e8572de`)
+   - `source-summary|contradiction` → **Learnings & Insights** (`0e411a6b-1367-4e9d-af52-5d2c534cc356`)
+3. Property mapping:
+   - Pattern Library: `title`→Pattern Name · `domain`→Category · body→Description · `tags`→Projects Used · `created`→Date Discovered
+   - Learnings & Insights: `title`→Learning · `domain`→Category · body→Insight · `tags`→Tags · `created`→Date Learned
+4. `notion api POST /v1/pages` (create) or `PATCH /v1/pages/{id}` (update existing)
+5. Write `notion-id`, `notion-url`, `notion-synced: YYYY-MM-DD` back to frontmatter
+6. Append to `wiki/log.md`
+
+#### `/memory wiki lint`
+Check and report (never auto-fix):
+- Orphan pages not in `wiki/index.md`
+- Pages with `updated` > 90 days ago
+- Broken `[[wikilinks]]` (target file doesn't exist)
+- Raw files without `<!-- processed:` header
+- Pages missing `sources:` entries
+- Asymmetric `related:` links (A lists B but B doesn't list A)
+
+#### `/memory wiki dream`
+Runs alongside or after `/memory dream`. Steps:
+1. Run full lint, present findings
+2. Re-synthesize stale pages (check if `sources:` have been updated since `updated` date)
+3. Detect contradiction pairs across pages → create `contradiction` typed pages
+4. Merge near-duplicates (>80% semantic overlap) → keep richer page, add redirect note to other
+5. Rebuild `wiki/index.md` from scratch: scan all pages, rank by inbound-link count, keep ≤30
+
+#### `/memory wiki status`
+```
+Wiki Status
+Pages:   [n] total — concepts:[n] entities:[n] sources:[n] comparisons:[n]
+Index:   [n]/30 entries
+Queue:   [n] pending Notion sync (confidence:high, notion-id empty)
+Stale:   [n] pages not updated in 90+ days
+Log:     last — [YYYY-MM-DD] [operation]
+Health:  [OK | ALERTS: orphans:[n] broken-links:[n] unprocessed-raw:[n]]
+```
+
+---
+
+#### Wiki Design Principles (from Karpathy pattern + production lessons)
+
+1. **Compounding beats retrieval** — the wiki accumulates; RAG re-derives. Both have a place; wiki wins for frequently-accessed synthesis.
+2. **index.md is the access gateway** — if a page isn't in index.md (≤30 entries), it functionally doesn't exist. This constraint forces curation.
+3. **LLM owns wiki/; humans own knowledge/** — never merge these. TAXONOMY governs knowledge/, wiki/schema.md governs wiki/.
+4. **Dedup first, always** — read index.md before creating any page. Patch existing; create new only when genuinely different.
+5. **Bidirectional links are load-bearing** — asymmetric links create orphans. Every related: entry must link back.
+6. **Confidence gates publishing** — `high` only after ≥2 sources confirm. Never sync `medium` or `low` to Notion.
+7. **log.md enables grep-based archaeology** — `grep "ingest" wiki/log.md` shows every source ever processed.
+8. **overview.md is the human entry point** — update it when the wiki's topical coverage shifts significantly.
+
+#### Wiki Anti-Patterns
+
+| Anti-pattern | Why it fails |
+|---|---|
+| Treating wiki as RAG | Defeats compounding; rebuild cost grows with every query |
+| Pages too granular | Atomic facts belong in knowledge/; wiki pages should synthesize ≥2 sources |
+| Skipping index.md update | Pages become orphans; index is the operational registry |
+| One-directional links | Creates disconnected subgraphs; lint will surface these |
+| Syncing low/medium confidence | Pollutes Notion with unverified claims |
+| wiki/ replaces knowledge/ | They're parallel; knowledge/ is atomic+human, wiki/ is synthetic+LLM |
+
+---
+
 ## `/memory setup` Implementation
 
 When the user runs `/memory setup`:
@@ -366,6 +555,16 @@ obsidian tags counts sort=count   # List tags
 | Identity docs | `identity/` | HOT-equivalent |
 | Stack references | `dev/stacks/` | COLD |
 | Operational playbooks | `operations/` | COLD |
+| **LLM Wiki** | **`wiki/`** | **WIKI (Mode 5)** |
+| Wiki agent contract | `wiki/schema.md` | WIKI |
+| Wiki master catalog | `wiki/index.md` (≤30 entries) | WIKI |
+| Wiki operations log | `wiki/log.md` (append-only) | WIKI |
+| Wiki synthesis entry | `wiki/overview.md` | WIKI |
+| Raw sources (immutable) | `wiki/raw/{web-clips,documents,sessions,external}/` | WIKI |
+| Compiled concept pages | `wiki/concepts/` | WIKI |
+| Compiled entity pages | `wiki/entities/` | WIKI |
+| Per-source summaries | `wiki/sources/` | WIKI |
+| Option comparisons | `wiki/comparisons/` | WIKI |
 
 ### Obsidian Frontmatter Schema
 
@@ -393,12 +592,13 @@ Every sync operation outputs a structured report:
 
 ```
 Memory sync complete
-Mode: [1 session | 2 openclaw-pull | 3 cc-project | 4 dream]
+Mode: [1 session | 2 openclaw-pull | 3 cc-project | 4 dream | 5 wiki]
 Topic files updated: X entries across Y files
 Obsidian: X patterns, Y decisions, Z learnings, N journals
 SESSION-STATE: flushed to memory/YYYY-MM-DD.md
 TTL: X entries reviewed, Y archived
 Skipped (duplicates): N
+Wiki: [X pages created | Y pages patched | Z queued for Notion] (Mode 5 only)
 Health: [OK | ALERTS: ...]
 ```
 
@@ -425,3 +625,6 @@ Health: [OK | ALERTS: ...]
 4. **Every entry decays** — TTL is mandatory, permanent is an explicit choice
 5. **Dedup before writing** — search existing content, patch or skip, never duplicate
 6. **The system reports what it did** — sync reports are structured, not silent
+7. **wiki/ is parallel to knowledge/, not a replacement** — knowledge/ is atomic+human-curated; wiki/ is synthetic+LLM-compiled. Never merge them.
+8. **index.md gates wiki access** — if a wiki page isn't in wiki/index.md (≤30 entries), it doesn't operationally exist
+9. **Confidence gates Notion publishing** — only `confidence: high` pages sync to Notion; unverified claims stay in the vault
