@@ -20,50 +20,5 @@
     "skill-first"
   ],
   "skills": ["./"],
-  "hooks": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "bash hooks/session-start-vault.sh"
-      },
-      {
-        "type": "command",
-        "command": "bash hooks/force-mcp-connectors.sh"
-      }
-    ],
-    "PreCompact": [
-      {
-        "type": "command",
-        "command": "bash hooks/pre-compact-vault.sh"
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "bash hooks/session-stop-vault.sh",
-        "async": true
-      }
-    ],
-    "SubagentStart": [
-      {
-        "type": "command",
-        "command": "bash hooks/agent-start.sh",
-        "async": true
-      }
-    ],
-    "SubagentStop": [
-      {
-        "type": "command",
-        "command": "bash hooks/agent-stop.sh",
-        "async": true
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "compact",
-        "type": "command",
-        "command": "bash hooks/compact-notification.sh"
-      }
-    ]
-  }
+  "hooks": "./hooks/hooks.json"
 }
