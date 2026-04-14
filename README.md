@@ -120,6 +120,16 @@ export DREAM_SCHEDULE="0 3 * * 0"
 | `/memory status` | Memory health: tier sizes, TTL alerts, last sync times |
 | `/memory setup` | Configure vault path, detect platforms, install hooks |
 | `/memory audit` | TTL audit + boundary check + health alerts |
+| `/memory wiki sync` | **Full pipeline**: init → ingest all vault sources → Notion publish (Mode 5) |
+| `/memory wiki sync --full` | Full pipeline, reprocessing all sources from scratch (Mode 5) |
+| `/memory wiki init` | Initialize wiki/ folder structure in vault (Mode 5) |
+| `/memory wiki ingest [source]` | Process raw source → compile wiki pages (Mode 5) |
+| `/memory wiki ingest --from-memory` | Pull session digests + topics → wiki pages (Mode 5) |
+| `/memory wiki query [topic]` | Answer from compiled wiki, not raw sources (Mode 5) |
+| `/memory wiki sync notion` | Push publish-ready pages to Notion (Mode 5) |
+| `/memory wiki lint` | Health check: orphans, stale, broken links, missing provenance (Mode 5) |
+| `/memory wiki dream` | Bulk consolidation: merge, contradiction detection, rebuild index (Mode 5) |
+| `/memory wiki status` | Wiki stats: pages, stale count, publish queue, last sync (Mode 5) |
 
 ---
 
@@ -193,7 +203,35 @@ for hook in session-start-vault.sh pre-compact-vault.sh session-stop-vault.sh \
 done
 ```
 
-Then update `~/.claude/settings.json` to register the hooks. See [hooks/README.md](hooks/README.md) for the full JSON configuration.
+Then add the following to the `"hooks"` key in `~/.claude/settings.json`. If a `hooks` key already exists, merge the events below into the existing structure — do not replace the whole file.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/session-start-vault.sh"},
+      {"type": "command", "command": "bash ~/.claude/hooks/force-mcp-connectors.sh"}
+    ]}],
+    "PreCompact": [{ "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/pre-compact-vault.sh"}
+    ]}],
+    "Stop": [{ "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/session-stop-vault.sh", "async": true}
+    ]}],
+    "SubagentStart": [{ "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/agent-start.sh", "async": true}
+    ]}],
+    "SubagentStop": [{ "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/agent-stop.sh", "async": true}
+    ]}],
+    "Notification": [{ "matcher": "compact", "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/compact-notification.sh"}
+    ]}]
+  }
+}
+```
+
+Note: `~/.claude/hooks/` must exist. If it doesn't: `mkdir -p ~/.claude/hooks`. The `/memory setup` wizard creates this directory and symlinks the hooks automatically — manual installation is only needed if you skipped the wizard.
 
 ---
 
@@ -222,7 +260,7 @@ Health: OK
 
 ---
 
-## 4 Sync Modes
+## 5 Sync Modes
 
 | Mode | Command | What It Syncs | Direction |
 |------|---------|---------------|-----------|
@@ -230,6 +268,36 @@ Health: OK
 | 2 | `/memory sync openclaw` | OpenClaw journals | OpenClaw → Obsidian |
 | 3 | `/memory sync projects` | CC project memory files | `~/.claude/projects/` → Obsidian |
 | 4 | `/memory dream` | Everything + consolidation | All tiers + prune + TTL audit |
+| 5 | `/memory wiki sync` | Vault → compiled wiki → Notion | COLD → WIKI → Notion |
+
+---
+
+## LLM Wiki (Mode 5)
+
+The wiki is a compounding knowledge base — compiled once from your vault sources, maintained by the LLM, published to Notion. Unlike RAG (which re-derives answers from raw docs every time), the wiki synthesizes knowledge into structured pages. You drop sources, run `/memory wiki sync`, and the wiki gets smarter over time.
+
+```
+Sessions → /memory sync → /memory wiki ingest --from-memory → /memory wiki sync notion → Notion
+```
+
+**Two parallel knowledge systems** — they never merge:
+
+| System | Location | Authored by | Governed by |
+|--------|----------|-------------|-------------|
+| Vault | `knowledge/` | Human | TAXONOMY.md |
+| Wiki | `wiki/` | LLM | `wiki/schema.md` |
+
+The wiki feeds from your COLD tier (vault) and publishes outward to Notion. Index pages are curated to ≤30 entries — pages not in `index.md` don't operationally exist.
+
+**The continuous loop:**
+
+1. `/memory sync` — session insights → vault (COLD)
+2. `/memory wiki ingest --from-memory` — vault topics + session digests → wiki pages
+3. `/memory wiki sync notion` — publish-ready pages → Notion
+
+**Cross-repo:** Orchestrator domain skills invoke `/memory sync` at ticket completion to persist execution learnings into the wiki. Over time the wiki builds a knowledge graph of what worked, what failed, and why — across every domain.
+
+Full operational spec in SKILL.md — Mode 5 section.
 
 ---
 
