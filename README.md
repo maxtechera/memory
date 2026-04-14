@@ -135,80 +135,75 @@ export DREAM_SCHEDULE="0 3 * * 0"
 
 ## How It Works
 
-### How Hooks Connect the Agent to Memory
+### The agent knows because hooks tell it
 
-Claude Code fires lifecycle events — SessionStart, PreCompact, Stop, SubagentStart, SubagentStop — and hooks run shell scripts in response. The scripts' stdout is injected directly into the agent's context as a `system-reminder`. This is how memory reaches the agent without any manual invocation.
+When you start a Claude Code session, a small script runs in the background and tells the agent: where your vault is, what you were last working on, and where to find more context. That's it. No setup per session, no copy-pasting notes.
 
-**Session lifecycle:**
+The same thing happens when the agent spawns a helper (a subagent). Before the helper starts working, it automatically receives a briefing: what the parent was doing, which project this belongs to, and where to look for more information.
 
-```
-SessionStart
-  └─ session-start-vault.sh → injects vault stats (path, note count, journals)
-     ↓ agent reads MEMORY.md router (HOT, always loaded)
-     ↓ agent queries topics/*.md on demand (WARM)
-     ↓ agent searches Obsidian vault on demand (COLD)
-
-During session
-  └─ agent writes SESSION-STATE.md before responding (WAL protocol)
-
-PreCompact
-  └─ pre-compact-vault.sh → flushes SESSION-STATE to vault daily journal
-
-Stop
-  └─ session-stop-vault.sh → final flush to vault + ~/.claude/compaction-state/latest.md
-```
-
-**Subagent context injection:**
-
-Every spawned subagent gets memory context automatically via `SubagentStart → agent-start.sh`. The hook reads from the parent session and injects:
+**A session from start to finish:**
 
 ```
-## Agent Memory Context
-### Run Reference        ← ship run ID from .ship-run file or $SHIP_RUN_ID
-### Parent Session Task  ← current task from SESSION-STATE.md
-### Memory Router        ← MEMORY.md index (first 40 lines)
-### WARM Topics          ← list of available memory/topics/*.md files
-### Memory Access        ← HOT/WARM/COLD query patterns
+You open a session
+  → agent learns your vault location + recent journal count
+
+You work
+  → agent notes decisions and current task as it goes (SESSION-STATE.md)
+
+Claude needs to compress the conversation
+  → current state is saved to your vault before anything is lost
+
+You close the session
+  → everything is flushed to the vault for next time
 ```
 
-This means every subagent starts with: who it belongs to (run ID), what the parent was doing, where to find more context — without the parent needing to re-brief it.
+**When the agent spawns a helper:**
 
-**Run ID propagation (multi-agent runs):**
+The helper gets a briefing before its first message:
 
-When a ship run starts, the engine writes the run ID to `.ship-run` in the working directory. Every subagent spawned in that directory picks it up automatically:
+```
+What project/run this belongs to   ← from .ship-run file
+What the parent was working on     ← from SESSION-STATE.md
+Where to find more context         ← MEMORY.md index + topic files list
+How to query HOT / WARM / COLD     ← access patterns
+```
+
+No re-briefing needed. The helper arrives knowing enough to start.
+
+**How the project ID travels to helpers (multi-agent runs):**
+
+At run start, the engine writes a small ID file:
 
 ```bash
-# Written at run start:
 echo "ship-ABC-123" > .ship-run
-
-# Read by agent-start.sh (priority order):
-1. $SHIP_RUN_ID env var
-2. .ship-run file in $PWD
-3. SESSION-STATE.md grep fallback
 ```
 
-No manual plumbing. The hook does the wiring.
+Every helper spawned in that folder picks it up automatically. If the file isn't there, the hook looks for an env var, then falls back to SESSION-STATE.md. You never wire this manually.
 
-### The 3 Tiers
+### 3 tiers — hot, warm, cold
+
+Think of these as three places the agent looks, from fastest to deepest:
 
 ```
-HOT   ≤2400tok, always loaded
-  MEMORY.md         = router (pointers to topic files)
-  SESSION-STATE.md  = WAL (current task, decisions, pending)
+HOT   Always in context (≤2400 tokens)
+  MEMORY.md         — index of what topics exist
+  SESSION-STATE.md  — what's happening right now
 
-WARM  on-demand, domain-scoped
-  memory/topics/*.md  facts with TTL decay
-  memory/YYYY-MM-DD.md  daily journals
+WARM  Loaded on demand, one topic at a time
+  memory/topics/*.md  — facts about a domain, expire over time
+  memory/YYYY-MM-DD.md  — daily journals
 
-COLD  permanent, search-only
-  Obsidian vault    knowledge/ logs/ projects/ identity/
+COLD  Searched, never fully loaded
+  Obsidian vault    — permanent knowledge, decisions, logs
 ```
 
-### Sync: 3 Steps
+The agent reads HOT on every session. It pulls WARM files when it needs domain context. It searches COLD when it needs something older or more specific.
 
-1. **Detect** — Find what changed (new session state, stale journals, TTL expirations)
-2. **Classify & Route** — Each insight goes to the right tier: fact → topics, pattern → vault, rule → AGENTS.md
-3. **Write with Proof** — Structured sync report shows exactly what was written, skipped, or flagged
+### Syncing: 3 steps
+
+1. **Detect** — find what changed (new decisions, stale entries, expired TTLs)
+2. **Classify** — each insight goes to the right tier: fact → topics, pattern → vault, rule → AGENTS.md
+3. **Write with proof** — a sync report shows exactly what was saved, skipped, or flagged
 
 ### Cross-Platform Architecture
 
