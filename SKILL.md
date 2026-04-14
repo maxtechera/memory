@@ -488,7 +488,10 @@ sources: []         # vault paths or wiki/raw/ files that informed this page
 related: []         # [[wikilinks]] to other wiki pages (bidirectional)
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+last_confirmed: YYYY-MM-DD  # date confidence was last verified; lint flags if >90 days old
 confidence: high|medium|low
+supersedes: ""      # [[page]] this page replaces (if any)
+superseded_by: ""   # [[page]] that has replaced this page (set + downgrade to low)
 domain: dev|operations|content|marketing|business|ai-agents|identity|product
 tags: []
 notion-id: ""       # auto-populated by sync notion
@@ -498,9 +501,13 @@ notion-synced: ""
 ```
 
 **Confidence semantics**:
-- `high` — multiple sources confirm, ready for Notion sync
-- `medium` — one source, needs corroboration before publishing
-- `low` — stub or contradicted, needs investigation
+- `high` — ≥2 sources confirm AND `last_confirmed` ≤90 days old. Ready for Notion sync.
+- `medium` — one source, or unverified in >90 days. Needs corroboration before publishing.
+- `low` — stub, contradicted, or superseded. Do not publish.
+
+**`last_confirmed` rule**: set to today on every ingest that touches the page. Lint flags `confidence: high` pages where `last_confirmed` > 90 days — downgrade to `medium` pending re-verification.
+
+**Supersession rule**: when a concept evolves, create the new page with `supersedes: [[old-page]]`. On the old page, set `superseded_by: [[new-page]]` and downgrade to `confidence: low`. Do NOT delete — the history of belief changes matters.
 
 **Type → folder**:
 | type | folder |
@@ -611,7 +618,9 @@ Process any unprocessed files dropped into the raw/ subdirs.
 1. **Rebuild `wiki/overview.md`**: update project landscape, concept cluster map, wiki vs knowledge/ table
 2. **Rebuild `wiki/index.md`**: scan all wiki pages, count inbound links per page, keep top ≤30 by inbound-link count
 3. **Append to `wiki/log.md`**: `## [YYYY-MM-DD] sync | full-pipeline | [n] pages created | [n] patched | [n] Notion queued`
-4. **Notion publish**: run `/memory wiki sync notion` — push all `confidence: high` + `notion-id: ""` pages
+4. **Update `wiki/sources.md`**: append any newly processed sources to the registry
+5. **Notion publish**: run `/memory wiki sync notion` — push all `confidence: high` + `notion-id: ""` + `last_confirmed` ≤90 days pages
+   - Skip stale pages (last_confirmed > 90 days); report count in sync report
 
 ---
 
@@ -642,8 +651,9 @@ Phase 6 (raw sources):
 
 Finalize:
   Index: [n]/30 entries
-  Notion queue: [n] pages (confidence:high)
+  Notion queue: [n] pages (confidence:high, last_confirmed ≤90d)
   Notion published: [n]
+  Confidence stale (skipped Notion): [n] pages
 
 Health: [OK | ALERTS: ...]
 ──────────────────────────────────────────
@@ -657,22 +667,30 @@ Health: [OK | ALERTS: ...]
 3. Confirm `wiki/schema.md`, `wiki/index.md`, `wiki/log.md`, `wiki/overview.md` exist
 4. Report pages by type, last log entry
 
-#### `/memory wiki ingest [source|--from-memory]`
+#### `/memory wiki ingest [source|--from-memory] [--interactive]`
 
 **`--from-memory`**: reads `logs/sessions/*.md` (last 7 days) + `memory/topics/*.md` as source material.
 **`[file]`**: reads specified file from `wiki/raw/` or vault path.
 **`[vault-cluster]`**: reads a folder of vault notes as a batch source (e.g., `knowledge/patterns/ai-agents/`).
+**`--interactive`**: default for single-source ingests. Presents key takeaways before writing. Batch mode (`--from-memory`, `wiki sync`) is non-interactive.
 
 Steps:
 1. Read source(s). Skip any with `<!-- processed: YYYY-MM-DD -->`.
+1.5 (**interactive mode only**) Present key takeaways before writing:
+   - Summarize 3–5 key insights from the source
+   - List which existing wiki pages this source touches
+   - Ask: "Any emphasis or angles to focus on? [enter to proceed]"
+   - Adjust synthesis based on user direction before writing
+   *(Karpathy: "I prefer to ingest sources one at a time and stay involved — I read the summaries, check the updates, and guide the LLM on what to emphasize.")*
 2. Read `wiki/index.md` — find existing pages this source touches.
 3. For each affected page (5–15 typical):
-   - Exists → patch: update body, `updated`, add to `sources:`, note contradictions
-   - New → create: full frontmatter, place in correct type folder
+   - Exists → patch: update body, `updated`, `last_confirmed`, add to `sources:`, note contradictions
+   - New → create: full frontmatter (including `last_confirmed: today`), place in correct type folder
 4. Bidirectional cross-link: every `related:` entry must link back.
 5. Update `wiki/index.md` (≤30 entries — prune least-linked to make room).
 6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source] | [n] pages touched`.
 7. Mark source processed: prepend `<!-- processed: YYYY-MM-DD -->`.
+8. Append to `wiki/sources.md`: add row `| [source] | [type] | [today] | [today] | [pages touched] |`.
 
 **Ingest rule**: if a page isn't in `wiki/index.md`, it doesn't operationally exist. Always update index.
 
@@ -681,10 +699,22 @@ Steps:
 2. Read those pages
 3. Synthesize answer with `[[page]]` citations
 4. Gap found → create stub page (`confidence: low`), log `gap-identified`
-5. Valuable answer → offer to file as new `synthesis` page
+5. Evaluate answer quality for filing:
+   - Synthesizes ≥2 wiki pages into a new conclusion → **synthesis** candidate
+   - Compares options from ≥2 pages → **comparison** candidate
+   - Merely restates one existing page → not a candidate
+6. If candidate, offer to file as new wiki page:
+   - `type: synthesis` → `concepts/` · `type: comparison` → `comparisons/`
+   - `sources:` = the wiki pages read during this query
+   - `confidence: medium` (one query session = one source; needs corroboration to reach `high`)
+   - `last_confirmed:` today
+   - Add to `wiki/index.md` + append to `wiki/log.md` as `query-filed`
+
+*(Karpathy: "good answers can be filed back into the wiki as new pages... This way your explorations compound in the knowledge base just like ingested sources do.")*
 
 #### `/memory wiki sync notion`
-1. Find pages: `notion-id: ""` + `confidence: high`
+1. Find pages: `notion-id: ""` + `confidence: high` + `last_confirmed` ≤90 days old
+   - Pages with `confidence: high` but `last_confirmed` > 90 days: skip + report as "confidence stale"
 2. Route by type:
    - `concept|entity|synthesis` → **Pattern Library** (`bb55a805-3f8d-4958-8c89-0f353e8572de`)
    - `source-summary|contradiction` → **Learnings & Insights** (`0e411a6b-1367-4e9d-af52-5d2c534cc356`)
@@ -703,6 +733,22 @@ Check and report (never auto-fix):
 - Raw files without `<!-- processed:` header
 - Pages missing `sources:` entries
 - Asymmetric `related:` links (A lists B but B doesn't list A)
+- **Concept gaps**: `[[wikilink]]` in body text pointing to a non-existent wiki page → "concept mentioned, no page"
+- **Confidence staleness**: `confidence: high` + `last_confirmed` > 90 days ago → "confidence unverified"
+- **Supersession orphans**: `superseded_by:` points to non-existent page → "broken supersession"
+- **Sources registry gaps**: sources in `wiki/raw/` not listed in `wiki/sources.md` → "unregistered raw source"
+
+After the problem report, always output a **Growth Suggestions** section:
+```
+=== GROWTH SUGGESTIONS ===
+Concepts worth creating (mentioned but no page):
+  - [[concept-name]] — mentioned in [n] pages
+New questions to explore:
+  - [LLM-generated questions based on cluster gaps and missing citations]
+Sources to investigate:
+  - [Suggested sources based on concept gaps]
+```
+*(Karpathy: "The LLM is good at suggesting new questions to investigate and new sources to look for.")*
 
 #### `/memory wiki dream`
 Runs alongside or after `/memory dream`. Steps:
@@ -732,9 +778,11 @@ Health:  [OK | ALERTS: orphans:[n] broken-links:[n] unprocessed-raw:[n]]
 3. **LLM owns wiki/; humans own knowledge/** — never merge these. TAXONOMY governs knowledge/, wiki/schema.md governs wiki/.
 4. **Dedup first, always** — read index.md before creating any page. Patch existing; create new only when genuinely different.
 5. **Bidirectional links are load-bearing** — asymmetric links create orphans. Every related: entry must link back.
-6. **Confidence gates publishing** — `high` only after ≥2 sources confirm. Never sync `medium` or `low` to Notion.
+6. **Confidence gates publishing** — `high` only after ≥2 sources confirm AND `last_confirmed` ≤90 days. Never sync `medium` or `low` to Notion.
 7. **log.md enables grep-based archaeology** — `grep "ingest" wiki/log.md` shows every source ever processed.
 8. **overview.md is the human entry point** — update it when the wiki's topical coverage shifts significantly.
+9. **Query output compounds the wiki** — when a query produces a new synthesis or comparison, file it as a wiki page. Explorations should not disappear into chat history. *(Karpathy's most-emphasized behavior.)*
+10. **Confidence must be actively maintained** — `last_confirmed` decays. A page that hasn't been re-verified in 90 days is not `high` confidence, regardless of how many sources it had at creation.
 
 #### Wiki Anti-Patterns
 
@@ -746,6 +794,9 @@ Health:  [OK | ALERTS: orphans:[n] broken-links:[n] unprocessed-raw:[n]]
 | One-directional links | Creates disconnected subgraphs; lint will surface these |
 | Syncing low/medium confidence | Pollutes Notion with unverified claims |
 | wiki/ replaces knowledge/ | They're parallel; knowledge/ is atomic+human, wiki/ is synthetic+LLM |
+| Discarding query answers | Valuable syntheses disappear into chat history instead of compounding the wiki |
+| Deleting superseded pages | History of belief changes matters; use `superseded_by:` + downgrade to `low` |
+| Never re-verifying confidence | `high` without `last_confirmed` is a confidence lie; lint enforces 90-day rule |
 
 ---
 
