@@ -135,11 +135,59 @@ export DREAM_SCHEDULE="0 3 * * 0"
 
 ## How It Works
 
-### 3 Steps
+### How Hooks Connect the Agent to Memory
 
-1. **Detect** — Find what changed (new session state, stale journals, TTL expirations)
-2. **Classify & Route** — Each insight goes to the right tier: fact → topics, pattern → vault, rule → AGENTS.md
-3. **Write with Proof** — Structured sync report shows exactly what was written, skipped, or flagged
+Claude Code fires lifecycle events — SessionStart, PreCompact, Stop, SubagentStart, SubagentStop — and hooks run shell scripts in response. The scripts' stdout is injected directly into the agent's context as a `system-reminder`. This is how memory reaches the agent without any manual invocation.
+
+**Session lifecycle:**
+
+```
+SessionStart
+  └─ session-start-vault.sh → injects vault stats (path, note count, journals)
+     ↓ agent reads MEMORY.md router (HOT, always loaded)
+     ↓ agent queries topics/*.md on demand (WARM)
+     ↓ agent searches Obsidian vault on demand (COLD)
+
+During session
+  └─ agent writes SESSION-STATE.md before responding (WAL protocol)
+
+PreCompact
+  └─ pre-compact-vault.sh → flushes SESSION-STATE to vault daily journal
+
+Stop
+  └─ session-stop-vault.sh → final flush to vault + ~/.claude/compaction-state/latest.md
+```
+
+**Subagent context injection:**
+
+Every spawned subagent gets memory context automatically via `SubagentStart → agent-start.sh`. The hook reads from the parent session and injects:
+
+```
+## Agent Memory Context
+### Run Reference        ← ship run ID from .ship-run file or $SHIP_RUN_ID
+### Parent Session Task  ← current task from SESSION-STATE.md
+### Memory Router        ← MEMORY.md index (first 40 lines)
+### WARM Topics          ← list of available memory/topics/*.md files
+### Memory Access        ← HOT/WARM/COLD query patterns
+```
+
+This means every subagent starts with: who it belongs to (run ID), what the parent was doing, where to find more context — without the parent needing to re-brief it.
+
+**Run ID propagation (multi-agent runs):**
+
+When a ship run starts, the engine writes the run ID to `.ship-run` in the working directory. Every subagent spawned in that directory picks it up automatically:
+
+```bash
+# Written at run start:
+echo "ship-ABC-123" > .ship-run
+
+# Read by agent-start.sh (priority order):
+1. $SHIP_RUN_ID env var
+2. .ship-run file in $PWD
+3. SESSION-STATE.md grep fallback
+```
+
+No manual plumbing. The hook does the wiring.
 
 ### The 3 Tiers
 
@@ -156,6 +204,12 @@ COLD  permanent, search-only
   Obsidian vault    knowledge/ logs/ projects/ identity/
 ```
 
+### Sync: 3 Steps
+
+1. **Detect** — Find what changed (new session state, stale journals, TTL expirations)
+2. **Classify & Route** — Each insight goes to the right tier: fact → topics, pattern → vault, rule → AGENTS.md
+3. **Write with Proof** — Structured sync report shows exactly what was written, skipped, or flagged
+
 ### Cross-Platform Architecture
 
 ```
@@ -169,7 +223,7 @@ COLD  permanent, search-only
       │            │            │
 ┌─────┴─────┐ ┌───┴──┐  ┌─────┴──────┐
 │ Claude    │ │ Open │  │  OpenClaw   │
-│ Code      │ │ Code │  │ (Railway)   │
+│ Code      │ │ + hooks│  │ (Railway)   │
 │ + hooks   │ │      │  │ git → local │
 └───────────┘ └──────┘  └────────────┘
 ```
@@ -185,7 +239,7 @@ Hooks fire automatically on Claude Code lifecycle events. No manual invocation n
 | `session-start-vault.sh` | Session starts | Injects vault awareness: path, note count, journal count |
 | `pre-compact-vault.sh` | Before compaction | Appends SESSION-STATE to vault daily journal |
 | `session-stop-vault.sh` | Session ends | Flushes state to vault + `~/.claude/compaction-state/latest.md` |
-| `agent-start.sh` | Subagent spawned | Increments agent counter |
+| `agent-start.sh` | Subagent spawned | Injects run ID, parent task, MEMORY.md router, WARM topics into subagent context |
 | `agent-stop.sh` | Subagent finished | Decrements agent counter |
 | `compact-notification.sh` | After compaction | Prints vault stats + session state preview |
 | `force-mcp-connectors.sh` | Session starts | Force-enables MCP connectors flag |
