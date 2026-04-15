@@ -33,6 +33,12 @@ This is the **AI amnesia tax**: wasted tokens, wasted time, degraded output qual
 
 ---
 
+![Obsidian knowledge graph — your second brain after weeks of sessions](docs/obsidian-graph.png)
+
+*Your second brain after weeks of sessions. Every node is a memory — decisions, patterns, learnings — automatically written and connected by your agent.*
+
+---
+
 ## Why a 3-tier architecture, not a vector database
 
 Most agent memory tools reach for a vector DB and call it done. Memory uses a tiered approach inspired by how operating systems manage memory — because not all context is equal:
