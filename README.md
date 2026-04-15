@@ -1,9 +1,11 @@
-# /memory
+# /memory — Persistent Memory & Second Brain for AI Agents
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](CHANGELOG.md)
 
-**Your AI agents forget everything between sessions. Memory fixes that.**
+**Your AI agent has amnesia. Every session starts from zero. This fixes it.**
+
+Context engineering for Claude Code, OpenClaw, and Gemini CLI — a 3-tier persistent memory system (HOT/WARM/COLD) backed by your Obsidian vault. Session hooks capture what your agent learns automatically. Your second brain grows with every session.
 
 Claude Code:
 ```
@@ -15,23 +17,56 @@ OpenClaw:
 clawhub install memory
 ```
 
-Run `/memory setup` once — session hooks fire automatically after that.
+Run `/memory setup` once — hooks fire on every session after that. No manual invocation ever.
 
 ---
 
-Session hooks capture what your agent learns — decisions, preferences, context — and persist it across compactions and session boundaries. Your next session picks up where the last one left off.
+## The problem: AI agent amnesia
+
+LLMs are stateless. Every time you start a new session, your agent has forgotten everything — your preferences, past decisions, project context, what you built last week. You re-explain. It re-learns. You pay the token cost. Every. Single. Session.
+
+This is the **AI amnesia tax**: wasted tokens, wasted time, degraded output quality because the agent is always catching up.
+
+**Memory solves it** with session hooks that automatically capture what matters and a tiered architecture that loads only what's relevant — so your agent picks up exactly where it left off, without you doing anything.
 
 **Requires**: [Obsidian](https://obsidian.md) with the Obsidian CLI (v1.12.7+) for long-term vault storage. Without Obsidian, hooks still save session state locally to `~/.claude/compaction-state/`.
 
+---
+
+## Why a 3-tier architecture, not a vector database
+
+Most agent memory tools reach for a vector DB and call it done. Memory uses a tiered approach inspired by how operating systems manage memory — because not all context is equal:
+
+```
+HOT   Always in context — tiny, always loaded (≤2400 tokens)
+WARM  Loaded on demand — domain facts, expire over time
+COLD  Searched, never fully loaded — permanent knowledge in Obsidian vault
+```
+
+Your agent reads HOT on every session. It pulls WARM files when it needs domain context. It searches COLD when it needs something older. **No embeddings. No cloud dependency. No ongoing cost.** Just markdown files and your existing Obsidian vault.
+
+| | /memory | Mem0 / Letta / Zep | Vector DB solutions |
+|---|---|---|---|
+| Storage | Markdown + Obsidian | Cloud API / hosted | Vector embeddings |
+| Cost | Free | Paid API | Infrastructure cost |
+| Privacy | 100% local | Cloud | Cloud |
+| Cross-platform | Claude Code + OpenClaw + Gemini CLI | Framework-specific | Framework-specific |
+| LLM wiki built-in | Yes (Karpathy pattern) | No | No |
+| Setup | One command | SDK integration | Infrastructure setup |
+
+---
+
 ## What people use it for
 
-**Picking up where you left off.** Start a session, your agent already knows what you were working on, what decisions were made last week, and what the user prefers. No re-briefing, no context dump.
+**Eliminating re-briefing.** Start a session, your agent already knows what you were working on, what decisions were made last week, what you prefer. Zero context dump required.
 
-**Running long projects.** The WAL protocol captures decisions as they happen. Compaction events flush them to the vault. A month later you can ask "what did we decide about the auth system?" and get the answer.
+**Long-horizon projects.** The WAL protocol captures decisions as they happen. Compaction events flush them to the vault. A month later you can ask "what did we decide about the auth system?" and get the answer.
 
-**Cross-platform context.** Work in Claude Code on your Mac, switch to OpenClaw in a container, pick up in Gemini CLI. Memory syncs the HOT/WARM/COLD tiers across all of them via Obsidian vault or OpenClaw journals.
+**Context engineering at scale.** Instead of packing a prompt with everything, Memory surfaces only what's relevant. HOT memory stays tiny. WARM and COLD tiers load on demand. Up to 71x fewer tokens per session.
 
-**Reducing token spend.** Instead of re-loading full project context every session, Memory surfaces only what's relevant. HOT memory (active session) stays tiny. WARM and COLD tiers are queried on demand.
+**Cross-platform second brain.** Work in Claude Code on your Mac, switch to OpenClaw in a container, pick up in Gemini CLI. Memory syncs across all of them via your Obsidian vault — one source of truth, every platform.
+
+**LLM wiki that compounds.** Every `/memory sync` feeds your Obsidian-backed knowledge graph and updates your LLM wiki (Karpathy pattern) — a structured, queryable second brain that gets smarter with every session.
 
 ---
 
