@@ -23,6 +23,10 @@ Session hooks capture what your agent learns — decisions, preferences, context
 
 **Requires**: [Obsidian](https://obsidian.md) with the Obsidian CLI (v1.12.7+) for long-term vault storage. Without Obsidian, hooks still save session state locally to `~/.claude/compaction-state/`.
 
+## Learn the system behind `/memory`
+
+If you want the full operator playbook behind HOT/WARM/COLD memory, WAL capture, cross-platform sync, and weekly dream rituals, see the draft course outline: [AI Memory Systems / Memoria para Agentes IA](docs/COURSE_OUTLINE_AI_MEMORY_SYSTEMS.md).
+
 ## What people use it for
 
 **Picking up where you left off.** Start a session, your agent already knows what you were working on, what decisions were made last week, and what the user prefers. No re-briefing, no context dump.
