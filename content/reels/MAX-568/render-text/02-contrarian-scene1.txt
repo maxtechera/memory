@@ -1,0 +1,3 @@
+Longer prompts do not fix
+a stateless agent.
+They just make the reset slower.

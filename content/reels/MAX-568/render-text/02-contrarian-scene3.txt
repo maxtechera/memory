@@ -1,0 +1,3 @@
+HOT stays loaded.
+WARM loads by topic.
+COLD stays searchable.
