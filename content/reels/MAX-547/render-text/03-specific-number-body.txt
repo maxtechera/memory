@@ -1,0 +1,3 @@
+HOT stays loaded. WARM loads on demand. COLD stays searchable.
+Smaller active context, better continuity, less token waste.
+One setup step, three tiers, zero re-explaining.
