@@ -1,0 +1,2 @@
+COLD keeps deep history searchable,
+so continuity survives compaction.

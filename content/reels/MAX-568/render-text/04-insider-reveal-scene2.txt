@@ -1,0 +1,3 @@
+/memory writes session state
+before the reply, then flushes again
+before compaction lands.

@@ -1,0 +1,3 @@
+Install /memory once.
+Next session resumes with repo,
+last decision, and current focus.
