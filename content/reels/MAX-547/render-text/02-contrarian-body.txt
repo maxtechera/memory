@@ -1,0 +1,3 @@
+Better prompting does not fix stateless sessions.
+You need continuity: HOT in context, WARM by topic, COLD by search.
+That is what /memory changes.

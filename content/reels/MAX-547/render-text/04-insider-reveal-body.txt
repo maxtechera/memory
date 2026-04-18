@@ -1,0 +1,3 @@
+The WAL-style flow writes session state before the reply.
+Then the pre-compact hook flushes it before context disappears.
+That is why /memory survives compaction.

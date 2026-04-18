@@ -1,0 +1,3 @@
+Same project. Same goals. Zero memory.
+Re-explain the project. Re-explain the last decision. Re-explain the current focus.
+Install /memory once and let hooks persist context across compactions.
