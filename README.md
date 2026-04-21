@@ -49,21 +49,15 @@ Then run:
 
 ## The 30-second architecture
 
-```text
-                        /memory
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-   HOT memory         WARM memory        COLD memory
- always loaded       loaded on demand      searched
+```mermaid
+flowchart LR
+    A[/memory/] --> H[HOT\nAlways loaded\nMEMORY.md\nSESSION-STATE.md]
+    A --> W[WARM\nLoaded when relevant\nmemory/topics/*.md\nmemory/YYYY-MM-DD.md]
+    A --> C[COLD\nSearch only\nObsidian vault\nknowledge/ logs/ projects/]
 
- MEMORY.md           memory/topics/*.md   Obsidian vault
- SESSION-STATE.md    memory/YYYY-MM-DD.md knowledge/ logs/
-
- current task        recent facts         permanent knowledge
- active context      project notes        decisions, patterns,
- routing pointers    TTL-based memory     learnings, history
+    H --> H2[Current task\nActive context\nRouting pointers]
+    W --> W2[Recent facts\nProject notes\nTTL-based memory]
+    C --> C2[Durable decisions\nPatterns\nLong-term history]
 ```
 
 ### How to think about it
@@ -75,6 +69,24 @@ Then run:
 | **COLD** | Obsidian vault | Search only | Stores durable knowledge without forcing full-load context |
 
 **Mental model:** keep the prompt tiny, keep recent context reachable, keep long-term knowledge searchable.
+
+---
+
+## The standout feature, 7 lifecycle hooks
+
+These hooks are what make `/memory` feel automatic instead of manual.
+
+| Hook | Lifecycle moment | What it does | Why you care |
+|---|---|---|---|
+| `session-start-vault.sh` | Session starts | Injects vault awareness, recent journal counts, and memory context | The agent begins oriented instead of blank |
+| `pre-compact-vault.sh` | Before context compaction | Saves live session state into the journal before anything is compressed away | Important context survives long sessions |
+| `session-stop-vault.sh` | Session ends | Flushes state to the vault and local compaction state | The next session has continuity |
+| `agent-start.sh` | Subagent starts | Passes run ID, parent task, MEMORY router, and warm-topic pointers | Helpers do not need a full re-brief |
+| `agent-stop.sh` | Subagent ends | Tracks helper completion state | Multi-agent runs stay coordinated |
+| `compact-notification.sh` | After compaction | Prints vault stats and session-state preview | You can see what persisted |
+| `force-mcp-connectors.sh` | Session starts | Forces MCP connectors flag on supported setups | Integrations come up consistently |
+
+**Why this matters:** most memory tools ask you to remember to save memory. `/memory` remembers for you.
 
 ---
 
@@ -137,24 +149,6 @@ If you also use OpenClaw:
 ```bash
 clawhub install memory
 ```
-
----
-
-## The standout feature, 7 lifecycle hooks
-
-These hooks are what make `/memory` feel automatic instead of manual.
-
-| Hook | Lifecycle moment | What it does | Why you care |
-|---|---|---|---|
-| `session-start-vault.sh` | Session starts | Injects vault awareness, recent journal counts, and memory context | The agent begins oriented instead of blank |
-| `pre-compact-vault.sh` | Before context compaction | Saves live session state into the journal before anything is compressed away | Important context survives long sessions |
-| `session-stop-vault.sh` | Session ends | Flushes state to the vault and local compaction state | The next session has continuity |
-| `agent-start.sh` | Subagent starts | Passes run ID, parent task, MEMORY router, and warm-topic pointers | Helpers do not need a full re-brief |
-| `agent-stop.sh` | Subagent ends | Tracks helper completion state | Multi-agent runs stay coordinated |
-| `compact-notification.sh` | After compaction | Prints vault stats and session-state preview | You can see what persisted |
-| `force-mcp-connectors.sh` | Session starts | Forces MCP connectors flag on supported setups | Integrations come up consistently |
-
-**Why this matters:** most memory tools ask you to remember to save memory. `/memory` remembers for you.
 
 ---
 
